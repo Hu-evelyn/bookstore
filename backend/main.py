@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from database import engine, get_db
+from sqlalchemy import or_
 
 # 1. MD5 加密辅助工具函数
 def get_md5_hash(password: str) -> str:
@@ -142,3 +143,96 @@ def create_new_user(
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+# ==================== 图书管理 API 接口 ====================
+
+@app.get("/api/books", response_model=list[schemas.BookOut])
+def search_books(
+    keyword: str = None, 
+    current_user: models.User = Depends(get_current_user), # 需要登录
+    db: Session = Depends(get_db)
+):
+    """
+    图书查询：支持 ISBN、书名、作者、出版社的模糊查询 [PPT 功能 3]
+    """
+    query = db.query(models.Book)
+    if keyword:
+        # 使用 or_ 进行多条件模糊匹配
+        query = query.filter(
+            or_(
+                models.Book.isbn.ilike(f"%{keyword}%"),
+                models.Book.title.ilike(f"%{keyword}%"),
+                models.Book.author.ilike(f"%{keyword}%"),
+                models.Book.publisher.ilike(f"%{keyword}%")
+            )
+        )
+    return query.all()
+
+@app.put("/api/books/{isbn}")
+def update_book_info(
+    isbn: str, 
+    book_info: schemas.BookBase, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    修改图书信息 [PPT 功能 4]
+    """
+    book = db.query(models.Book).filter(models.Book.isbn == isbn).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="未找到该书籍")
+    
+    # 更新字段
+    book.title = book_info.title
+    book.author = book_info.author
+    book.publisher = book_info.publisher
+    book.retail_price = book_info.retail_price
+    db.commit()
+    
+    return {"status": "success", "message": "图书信息修改成功"}
+
+# ==================== 销售业务 API 接口 ====================
+
+@app.post("/api/sales/sell")
+def sell_book(
+    sell_data: schemas.SellBook, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    前台售书：扣库存 + 增加财务收入 [PPT 功能 9, 10]
+    核心考点：数据库事务处理
+    """
+    if sell_data.count <= 0:
+        raise HTTPException(status_code=400, detail="销售数量必须大于0")
+
+    # 1. 查询书籍，使用 with_for_update() 加行级锁，防止高并发超卖
+    book = db.query(models.Book).filter(models.Book.isbn == sell_data.isbn).with_for_update().first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail="未找到该书籍")
+    if book.stock < sell_data.count:
+        raise HTTPException(status_code=400, detail=f"库存不足！当前库存仅剩 {book.stock} 本")
+
+    try:
+        # 2. 扣减库存
+        book.stock -= sell_data.count
+        
+        # 3. 增加财务账单流水 (类型为 INCOME)
+        total_price = book.retail_price * sell_data.count
+        new_account_record = models.Accounting(
+            record_type="INCOME",
+            amount=total_price,
+            operator_id=current_user.id
+        )
+        db.add(new_account_record)
+        
+        # 4. 提交事务 (库存和财务必须同时成功)
+        db.commit()
+        return {"status": "success", "message": f"成功售出 {sell_data.count} 本，收入 {total_price} 元"}
+    
+    except Exception as e:
+        # 如果中间发生任何报错，回滚整个事务，确保数据不乱
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"系统内部错误，交易已回滚: {str(e)}")

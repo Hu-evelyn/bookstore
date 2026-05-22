@@ -29,3 +29,24 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True # 允许 Pydantic 兼容 SQLAlchemy 模型
+
+#图书相关格式校验
+class BookBase(BaseModel):
+    title: str
+    author: str
+    publisher: str
+    retail_price: float
+
+class BookCreate(BookBase):
+    isbn: str
+
+class BookOut(BookCreate):
+    stock: int
+
+    class Config:
+        from_attributes = True
+
+# 售书时前端传来的数据
+class SellBook(BaseModel):
+    isbn: str
+    count: int # 卖出几本
