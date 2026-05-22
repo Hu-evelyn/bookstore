@@ -50,3 +50,17 @@ class BookOut(BookCreate):
 class SellBook(BaseModel):
     isbn: str
     count: int # 卖出几本
+    
+#进货与财务管理schemas
+class ProcurementCreate(BaseModel):
+    isbn: str
+    count: int
+    import_price: float
+    # PPT规定：新书需填写以下信息，老书不需要 [cite: 25]
+    title: Optional[str] = None
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+
+class StockInRequest(BaseModel):
+    # 到货入库时，必须设定新的零售价 [cite: 34]
+    retail_price: float

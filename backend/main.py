@@ -236,3 +236,137 @@ def sell_book(
         # 如果中间发生任何报错，回滚整个事务，确保数据不乱
         db.rollback()
         raise HTTPException(status_code=500, detail=f"系统内部错误，交易已回滚: {str(e)}")
+
+
+# ==================== 进货生命周期 API 接口 ====================
+
+@app.post("/api/procurement")
+def create_procurement(
+    data: schemas.ProcurementCreate, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    1. 创建进货单 (初始状态：未付款) [PPT 功能 5]
+    """
+    book = db.query(models.Book).filter(models.Book.isbn == data.isbn).first()
+    
+    # 如果库存里从来没这本书的信息，就建立一个占位符，库存初始为 0 [cite: 25]
+    if not book:
+        if not (data.title and data.author and data.publisher):
+            raise HTTPException(status_code=400, detail="该书为新书，必须提供书名、作者和出版社信息")
+        
+        new_book = models.Book(
+            isbn=data.isbn, title=data.title, 
+            author=data.author, publisher=data.publisher, 
+            stock=0, retail_price=0.0  # 零售价在入库时再确定
+        )
+        db.add(new_book)
+    
+    # 建立进货单 [cite: 25]
+    new_procurement = models.Procurement(
+        isbn=data.isbn, 
+        count=data.count, 
+        import_price=data.import_price, 
+        status="未付款"
+    )
+    db.add(new_procurement)
+    db.commit()
+    return {"status": "success", "message": "进货清单已创建，当前状态为[未付款]"}
+
+
+@app.put("/api/procurement/{proc_id}/pay")
+def pay_procurement(
+    proc_id: int, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    2. 进货付款：产生财务支出，状态流转为"已付款" [PPT 功能 6, 10]
+    """
+    proc = db.query(models.Procurement).with_for_update().filter(models.Procurement.id == proc_id).first()
+    if not proc or proc.status != "未付款":
+        raise HTTPException(status_code=400, detail="单据不存在或当前状态无法付款")
+    
+    # 修改状态 [cite: 27, 28]
+    proc.status = "已付款"
+    
+    # 记录财务支出 [cite: 38]
+    expense_amount = proc.count * proc.import_price
+    expense_record = models.Accounting(
+        record_type="EXPENSE", 
+        amount=expense_amount, 
+        operator_id=current_user.id
+    )
+    db.add(expense_record)
+    
+    db.commit()
+    return {"status": "success", "message": f"付款成功，财务已支出 {expense_amount} 元"}
+
+
+@app.delete("/api/procurement/{proc_id}/return")
+def return_procurement(
+    proc_id: int, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    3. 进货退货：仅限未付款单据 [PPT 功能 7]
+    """
+    proc = db.query(models.Procurement).filter(models.Procurement.id == proc_id).first()
+    if not proc or proc.status != "未付款":
+        raise HTTPException(status_code=400, detail="只能对[未付款]状态的书籍进行退货")
+    
+    # 修改状态为已退货 [cite: 30]
+    proc.status = "已退货"
+    db.commit()
+    return {"status": "success", "message": "已成功操作退货"}
+
+
+@app.put("/api/procurement/{proc_id}/stock-in")
+def stock_in_procurement(
+    proc_id: int, 
+    data: schemas.StockInRequest,
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    4. 到货入库：更新库存与零售价 [PPT 功能 8]
+    """
+    proc = db.query(models.Procurement).filter(models.Procurement.id == proc_id).first()
+    if not proc or proc.status != "已付款":
+        raise HTTPException(status_code=400, detail="只有[已付款]的单据才能进行入库操作")
+    
+    book = db.query(models.Book).filter(models.Book.isbn == proc.isbn).first()
+    
+    # 增加库存，并设定零售价 [cite: 34]
+    book.stock += proc.count
+    book.retail_price = data.retail_price
+    proc.status = "已入库"
+    
+    db.commit()
+    return {"status": "success", "message": "已成功入库，库存与价格已更新"}
+
+
+# ==================== 财务管理 API 接口 ====================
+
+@app.get("/api/accounting")
+def get_accounting_records(
+    start_date: str = None, 
+    end_date: str = None, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    查看财务账单流水 [PPT 功能 11]
+    """
+    query = db.query(models.Accounting)
+    
+    # 支持按时间段筛选 [cite: 40]
+    if start_date:
+        query = query.filter(models.Accounting.create_time >= start_date)
+    if end_date:
+        query = query.filter(models.Accounting.create_time <= f"{end_date} 23:59:59")
+        
+    records = query.all()
+    return records
