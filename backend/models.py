@@ -6,11 +6,18 @@ from database import Base
 # 用户表
 class User(Base):
     __tablename__ = "users"
+    
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    password_md5 = Column(String(100), nullable=False) # 存储加密后的密码
-    role = Column(String(20), default="admin") # 角色: super_admin / admin
-
+    username = Column(String(50), unique=True, index=True, nullable=False) # 用户名
+    password_md5 = Column(String(100), nullable=False)                     # MD5 密码
+    role = Column(String(20), default="admin")                             # 角色: super_admin / admin
+    
+    # 补充的基本信息
+    real_name = Column(String(50), nullable=False)                         # 真实姓名
+    emp_id = Column(String(20), unique=True, index=True, nullable=False)   # 工号
+    gender = Column(String(10))                                            # 性别
+    age = Column(Integer)
+    
 # 图书表 (核心)
 class Book(Base):
     __tablename__ = "books"
