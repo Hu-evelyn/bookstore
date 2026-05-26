@@ -2,7 +2,7 @@
 
 项目概览：图书销售管理系统，前端采用 Vue3 + Vite + Element Plus，后端采用 Python3 + FastAPI + SQLAlchemy，数据库为 PostgreSQL。
 
-目录结构（示例树）：
+目录结构：
 
 ```
 .
