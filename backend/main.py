@@ -144,6 +144,50 @@ def create_new_user(
     db.refresh(db_user)
     return db_user
 
+@app.get("/api/users")
+def get_users(
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    查询用户：超级管理员查所有，普通管理员只能查自己
+    """
+    if current_user.role == "super_admin":
+        return db.query(models.User).order_by(models.User.id).all()
+    else:
+        return db.query(models.User).filter(models.User.id == current_user.id).all()
+
+
+@app.put("/api/users/{user_id}")
+def update_user(
+    user_id: int, 
+    data: schemas.UserUpdate, 
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """
+    修改用户信息
+    """
+    # 核心安全拦截：如果当前用户既不是超级管理员，试图修改的也不是自己的ID，直接拦截！
+    if current_user.role != "super_admin" and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="越权警告：您只能修改自己的信息！")
+    
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="找不到该用户")
+    
+    # 更新基本信息
+    user.real_name = data.real_name
+    user.gender = data.gender
+    user.age = data.age
+    
+    # 如果传了新密码，就对新密码进行MD5加密并更新
+    if data.password:
+        user.password_md5 = get_md5_hash(data.password)
+        
+    db.commit()
+    return {"status": "success", "message": "用户信息更新成功"}
+
 
 # ==================== 图书管理 API 接口 ====================
 
@@ -239,6 +283,15 @@ def sell_book(
 
 
 # ==================== 进货生命周期 API 接口 ====================
+@app.get("/api/procurement")
+def get_procurement_list(
+    current_user: models.User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """查询所有进货单列表"""
+    # 按时间倒序排列，最新建的单子在最前面
+    return db.query(models.Procurement).order_by(models.Procurement.id.desc()).all()
+
 
 @app.post("/api/procurement")
 def create_procurement(

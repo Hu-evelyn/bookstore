@@ -64,3 +64,10 @@ class ProcurementCreate(BaseModel):
 class StockInRequest(BaseModel):
     # 到货入库时，必须设定新的零售价 [cite: 34]
     retail_price: float
+    
+# ==================== 用户管理 Schemas ====================
+class UserUpdate(BaseModel):
+    real_name: str
+    gender: str
+    age: int
+    password: Optional[str] = None  # 如果不填，代表不修改密码

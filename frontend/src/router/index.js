@@ -12,6 +12,12 @@ const routes = [
     component: () => import('../views/Layout.vue'),
     redirect: '/books', // 登录后默认跳转到图书管理页
     children: [
+      // 在 children 数组里找个位置加上这段：
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('../views/UserManage.vue')
+    },
       {
         path: 'books',
         name: 'Books',

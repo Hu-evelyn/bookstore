@@ -1,0 +1,23 @@
+/* src/style.css */
+:root {
+  /* 主色调：深邃紫 */
+  --el-color-primary: #713aca; 
+  --el-color-primary-light-3: #7c3aed;
+  --el-color-primary-light-5: #8b5cf6;
+  --el-color-primary-light-9: #f5f3ff;
+  
+  /* src/style.css 里的替换部分 */
+  --el-color-warning: #fde047; /* 浅鹅黄色 */
+  --el-color-warning-light-3: #fef08a; /* 悬浮时更浅的马卡龙黄 */
+  
+  /* 页面背景色 */
+  --page-bg: #ede9fe;
+}
+
+body, html, #app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background-color: var(--page-bg);
+}
