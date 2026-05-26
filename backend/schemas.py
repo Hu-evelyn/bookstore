@@ -1,4 +1,4 @@
-#用于处理前端输入输出校验
+#数据校验
 from pydantic import BaseModel
 from typing import Optional
 
@@ -28,7 +28,7 @@ class UserOut(BaseModel):
     role: str
 
     class Config:
-        from_attributes = True # 允许 Pydantic 兼容 SQLAlchemy 模型
+        from_attributes = True # 允许Pydantic兼容SQLAlchemy模型
 
 #图书相关格式校验
 class BookBase(BaseModel):
@@ -56,13 +56,13 @@ class ProcurementCreate(BaseModel):
     isbn: str
     count: int
     import_price: float
-    # PPT规定：新书需填写以下信息，老书不需要 [cite: 25]
+    # 新书需填写以下信息，老书不需要
     title: Optional[str] = None
     author: Optional[str] = None
     publisher: Optional[str] = None
 
 class StockInRequest(BaseModel):
-    # 到货入库时，必须设定新的零售价 [cite: 34]
+    # 到货入库时，必须设定新的零售价
     retail_price: float
     
 # ==================== 用户管理 Schemas ====================

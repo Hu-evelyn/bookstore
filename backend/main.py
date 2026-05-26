@@ -1,4 +1,4 @@
-# 更新main,实现核心加密、初始化与接口
+# fastapi程序入口、生命周期、工具函数、用户认证、以及主要的REST路由
 import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, Header
@@ -10,10 +10,10 @@ import schemas
 from database import engine, get_db
 from sqlalchemy import or_
 
-# 1. MD5 加密辅助工具函数
+# 1. MD5加密辅助工具函数
 def get_md5_hash(password: str) -> str:
     """将明文密码转化为 MD5 哈希值"""
-    # 按照 PPT 要求采用 MD5 算法进行加密
+    # 采用 MD5算法进行加密
     return hashlib.md5(password.encode('utf-8')).hexdigest()
 
 # 2. 模拟一个极其简单的 Token 验证机制（用于在中期实验中进行登录和权限检查）
@@ -30,13 +30,13 @@ def get_current_user(token: str = Header(None), db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="无效的登录凭证或用户不存在")
     return user
 
-# 3. 使用生命周期管理器 (Lifespan)：系统启动时自动检查并创建超级管理员
+# 3.使用生命周期管理器 (Lifespan)：系统启动时自动检查并创建超级管理员
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动时：确保数据库表已创建
     models.Base.metadata.create_all(bind=engine)
     
-    # 满足 PPT 要求：“超级管理员用户在系统完成时便已经存在”
+    # 超级管理员用户在系统完成时便已经存在
     db = next(get_db())
     try:
         admin_exist = db.query(models.User).filter(models.User.role == "super_admin").first()
@@ -57,12 +57,12 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     yield
-    # 关闭时执行的操作（这里不需要）
+    
 
-# 初始化 FastAPI 并传入 lifespan
+# 初始化 FastAPI并传入lifespan
 app = FastAPI(title="图书销售管理系统 API", lifespan=lifespan)
 
-# 配置 CORS 跨域
+# 配置CORS跨域
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -106,6 +106,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     }
 
 
+#超级管理员可以创建新用户，普通管理员只能修改自己的信息，超级管理员可以修改任何用户的信息
 @app.post("/api/auth/register", response_model=schemas.UserOut)
 def create_new_user(
     new_user: schemas.UserCreate, 
@@ -115,7 +116,6 @@ def create_new_user(
     """
     创建新用户接口 (仅限超级管理员操作)
     """
-    # 满足 PPT 要求：“普通管理员用户的用户名和密码需要由超级管理员用户来创建”
     if current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="权限不足！只有超级管理员才能创建新用户。")
     
@@ -144,6 +144,7 @@ def create_new_user(
     db.refresh(db_user)
     return db_user
 
+#用户查询与更新
 @app.get("/api/users")
 def get_users(
     current_user: models.User = Depends(get_current_user), 
@@ -198,7 +199,7 @@ def search_books(
     db: Session = Depends(get_db)
 ):
     """
-    图书查询：支持 ISBN、书名、作者、出版社的模糊查询 [PPT 功能 3]
+    图书查询：支持 ISBN、书名、作者、出版社的模糊查询
     """
     query = db.query(models.Book)
     if keyword:
@@ -221,7 +222,7 @@ def update_book_info(
     db: Session = Depends(get_db)
 ):
     """
-    修改图书信息 [PPT 功能 4]
+    修改图书信息
     """
     book = db.query(models.Book).filter(models.Book.isbn == isbn).first()
     if not book:
@@ -245,8 +246,7 @@ def sell_book(
     db: Session = Depends(get_db)
 ):
     """
-    前台售书：扣库存 + 增加财务收入 [PPT 功能 9, 10]
-    核心考点：数据库事务处理
+    前台售书：扣库存 + 增加财务收入
     """
     if sell_data.count <= 0:
         raise HTTPException(status_code=400, detail="销售数量必须大于0")
@@ -300,11 +300,11 @@ def create_procurement(
     db: Session = Depends(get_db)
 ):
     """
-    1. 创建进货单 (初始状态：未付款) [PPT 功能 5]
+    1. 创建进货单 (初始状态：未付款)
     """
     book = db.query(models.Book).filter(models.Book.isbn == data.isbn).first()
     
-    # 如果库存里从来没这本书的信息，就建立一个占位符，库存初始为 0 [cite: 25]
+    # 如果库存里从来没这本书的信息，就建立一个占位符，库存初始为 0
     if not book:
         if not (data.title and data.author and data.publisher):
             raise HTTPException(status_code=400, detail="该书为新书，必须提供书名、作者和出版社信息")
@@ -316,7 +316,7 @@ def create_procurement(
         )
         db.add(new_book)
     
-    # 建立进货单 [cite: 25]
+    # 建立进货单
     new_procurement = models.Procurement(
         isbn=data.isbn, 
         count=data.count, 
@@ -335,16 +335,16 @@ def pay_procurement(
     db: Session = Depends(get_db)
 ):
     """
-    2. 进货付款：产生财务支出，状态流转为"已付款" [PPT 功能 6, 10]
+    2. 进货付款：产生财务支出，状态流转为"已付款"
     """
     proc = db.query(models.Procurement).with_for_update().filter(models.Procurement.id == proc_id).first()
     if not proc or proc.status != "未付款":
         raise HTTPException(status_code=400, detail="单据不存在或当前状态无法付款")
     
-    # 修改状态 [cite: 27, 28]
+    # 修改状态
     proc.status = "已付款"
     
-    # 记录财务支出 [cite: 38]
+    # 记录财务支出
     expense_amount = proc.count * proc.import_price
     expense_record = models.Accounting(
         record_type="EXPENSE", 
@@ -364,13 +364,13 @@ def return_procurement(
     db: Session = Depends(get_db)
 ):
     """
-    3. 进货退货：仅限未付款单据 [PPT 功能 7]
+    3. 进货退货：仅限未付款单据
     """
     proc = db.query(models.Procurement).filter(models.Procurement.id == proc_id).first()
     if not proc or proc.status != "未付款":
         raise HTTPException(status_code=400, detail="只能对[未付款]状态的书籍进行退货")
     
-    # 修改状态为已退货 [cite: 30]
+    # 修改状态为已退货
     proc.status = "已退货"
     db.commit()
     return {"status": "success", "message": "已成功操作退货"}
@@ -384,7 +384,7 @@ def stock_in_procurement(
     db: Session = Depends(get_db)
 ):
     """
-    4. 到货入库：更新库存与零售价 [PPT 功能 8]
+    4. 到货入库：更新库存与零售价
     """
     proc = db.query(models.Procurement).filter(models.Procurement.id == proc_id).first()
     if not proc or proc.status != "已付款":
@@ -392,7 +392,7 @@ def stock_in_procurement(
     
     book = db.query(models.Book).filter(models.Book.isbn == proc.isbn).first()
     
-    # 增加库存，并设定零售价 [cite: 34]
+    # 增加库存，并设定零售价
     book.stock += proc.count
     book.retail_price = data.retail_price
     proc.status = "已入库"
@@ -411,11 +411,11 @@ def get_accounting_records(
     db: Session = Depends(get_db)
 ):
     """
-    查看财务账单流水 [PPT 功能 11]
+    查看财务账单流水
     """
     query = db.query(models.Accounting)
     
-    # 支持按时间段筛选 [cite: 40]
+    # 支持按时间段筛选
     if start_date:
         query = query.filter(models.Accounting.create_time >= start_date)
     if end_date:

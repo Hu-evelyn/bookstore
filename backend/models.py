@@ -28,7 +28,7 @@ class Book(Base):
     stock = Column(Integer, default=0)
     retail_price = Column(Float, nullable=False)
     
-    # 数据库底层的最后一道防线：确保库存永远不能是负数
+    # 确保库存永远不能是负数
     __table_args__ = (
         CheckConstraint('stock >= 0', name='check_stock_positive'),
     )
